@@ -3,119 +3,133 @@ import streamlit as st
 from ai_agent import get_response_from_ai_agent
 
 
-# -----------------------------
-# Page configuration
-# -----------------------------
+# ==============================================
+# PAGE CONFIGURATION
+# ==============================================
 
 st.set_page_config(
-    page_title="LangGraph Agent UI",
+    page_title="Agentra - AI Chatbot Agent",
     page_icon="🤖",
     layout="centered"
 )
 
 
-# -----------------------------
-# Title
-# -----------------------------
+# ==============================================
+# HEADER
+# ==============================================
 
 st.title("🤖 Agentra")
 
 st.write(
-    "Create and interact with AI agents using LangGraph."
+    "A configurable AI chatbot agent powered by "
+    "Groq, OpenRouter, LangGraph, LangChain, and Tavily."
 )
 
 
-# -----------------------------
-# System prompt
-# -----------------------------
+# ==============================================
+# SYSTEM PROMPT
+# ==============================================
 
 system_prompt = st.text_area(
-    "Define your AI Agent:",
+    "Define Your AI Agent:",
     height=100,
     placeholder=(
-        "Example: Act as an AI chatbot who is smart "
-        "and friendly."
+        "Example: You are a helpful AI assistant "
+        "who explains technical topics to beginners."
     )
 )
 
 
-# -----------------------------
-# Models
-# -----------------------------
-
-MODEL_NAMES_GROQ = [
-    "openai/gpt-oss-120b"
-]
-
-MODEL_NAMES_OPENAI = [
-    "gpt-4o-mini"
-]
-
-
-# -----------------------------
-# Provider
-# -----------------------------
+# ==============================================
+# PROVIDER SELECTION
+# ==============================================
 
 provider = st.radio(
-    "Select Provider:",
-    ("Groq", "OpenAI")
+    "Select AI Provider:",
+    [
+        "Groq",
+        "OpenRouter"
+    ],
+    horizontal=True
 )
 
 
-# -----------------------------
-# Model
-# -----------------------------
+# ==============================================
+# MODEL SELECTION
+# ==============================================
 
 if provider == "Groq":
 
     selected_model = st.selectbox(
         "Select Groq Model:",
-        MODEL_NAMES_GROQ
+        [
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
+        ]
     )
 
 else:
 
     selected_model = st.selectbox(
-        "Select OpenAI Model:",
-        MODEL_NAMES_OPENAI
+        "Select OpenRouter Model:",
+        [
+            "openrouter/free"
+        ]
     )
 
 
-# -----------------------------
-# Web search
-# -----------------------------
+# ==============================================
+# WEB SEARCH
+# ==============================================
 
 allow_web_search = st.checkbox(
-    "Allow Web Search"
+    "🌐 Allow Web Search",
+    help="Use Tavily to search the web for current information."
 )
 
 
-# -----------------------------
-# User query
-# -----------------------------
+# ==============================================
+# USER QUERY
+# ==============================================
 
 user_query = st.text_area(
-    "Enter your query:",
+    "Enter Your Query:",
     height=150,
-    placeholder="Ask Anything!"
+    placeholder="Ask anything..."
 )
 
 
-# -----------------------------
-# Ask button
-# -----------------------------
+# ==============================================
+# ASK AGENT
+# ==============================================
 
-if st.button("Ask Agent!", type="primary"):
+if st.button(
+    "Ask Agent!",
+    type="primary"
+):
+
+    # ------------------------------------------
+    # Validate Query
+    # ------------------------------------------
 
     if not user_query.strip():
 
-        st.warning("Please enter a query.")
+        st.warning(
+            "Please enter a query."
+        )
+
+
+    # ------------------------------------------
+    # Run Agent
+    # ------------------------------------------
 
     else:
 
         try:
 
-            with st.spinner("AI Agent is thinking..."):
+            with st.spinner(
+                "Agentra is thinking..."
+            ):
 
                 response = get_response_from_ai_agent(
                     llm_id=selected_model,
@@ -125,6 +139,10 @@ if st.button("Ask Agent!", type="primary"):
                     provider=provider
                 )
 
+
+            # ------------------------------------------
+            # Display Response
+            # ------------------------------------------
 
             st.subheader("Agent Response")
 

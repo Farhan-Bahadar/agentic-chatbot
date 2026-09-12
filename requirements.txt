@@ -1,7 +1,6 @@
 streamlit
 python-dotenv
-pydantic
 langchain-groq
-langchain-openai
+langchain-mistralai
 langchain-tavily
 langgraph
