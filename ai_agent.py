@@ -1,175 +1,143 @@
-from dotenv import load_dotenv
 import os
+import re
+from typing import Any, Dict, List
 
-load_dotenv()
-
-# --------------------------------
-# Imports
-# --------------------------------
-
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
-
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages.ai import AIMessage
+
+load_dotenv()
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are Agentra, a smart, helpful, accurate and friendly AI assistant. "
+    "Answer the user's request clearly and directly. "
+    "If web search is available and useful, use it before answering. "
+    "Do not claim to have searched the web if you did not actually use the search tool."
+)
 
 
-# --------------------------------
-# Main AI Agent Function
-# --------------------------------
+def _require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise ValueError(
+            f"Missing {name}. Add it to your .env file locally or your deployment secrets."
+        )
+    return value
 
-def get_response_from_ai_agent(
-    llm_id,
-    query,
-    allow_search,
-    system_prompt,
-    provider
-):
 
-    # ==============================================
-    # GROQ
-    # ==============================================
+def _build_llm(provider: str, llm_id: str):
+    provider = provider.strip().lower()
 
-    if provider == "Groq":
-
-        api_key = os.getenv("GROQ_API_KEY")
-
-        if not api_key:
-            return "GROQ_API_KEY is missing from your .env file."
-
-        llm = ChatGroq(
+    if provider == "groq":
+        return ChatGroq(
             model=llm_id,
+            groq_api_key=_require_env("GROQ_API_KEY"),
             temperature=0,
-            api_key=api_key
         )
 
-
-    # ==============================================
-    # OPENROUTER
-    # ==============================================
-
-    elif provider == "OpenRouter":
-
-        api_key = os.getenv("OPENROUTER_API_KEY")
-
-        if not api_key:
-            return "OPENROUTER_API_KEY is missing from your .env file."
-
-        llm = ChatOpenAI(
+    if provider == "openrouter":
+        return ChatOpenAI(
             model=llm_id,
-            temperature=0,
-            api_key=api_key,
-            base_url="https://openrouter.ai/api/v1",
+            openai_api_key=_require_env("OPENROUTER_API_KEY"),
+            openai_api_base="https://openrouter.ai/api/v1",
             default_headers={
                 "HTTP-Referer": "https://agentra.streamlit.app",
-                "X-Title": "Agentra - AI Chatbot Agent"
-            }
+                "X-Title": "Agentra - AI Agent Studio",
+            },
+            temperature=0,
         )
 
-
-    # ==============================================
-    # INVALID PROVIDER
-    # ==============================================
-
-    else:
-
-        return "Invalid AI provider selected."
+    raise ValueError(f"Unsupported provider: {provider}")
 
 
-    # ==============================================
-    # TAVILY WEB SEARCH
-    # ==============================================
+def _extract_sources(messages: List[Any]) -> List[str]:
+    urls = []
+
+    for message in messages:
+        if not isinstance(message, ToolMessage):
+            continue
+
+        content = message.content
+        if isinstance(content, list):
+            content = " ".join(str(item) for item in content)
+        else:
+            content = str(content)
+
+        for url in re.findall(r"https?://[^\s\]\)\"'<>]+", content):
+            url = url.rstrip(".,;")
+            if url not in urls:
+                urls.append(url)
+
+    return urls[:10]
+
+
+def get_response_from_ai_agent(
+    llm_id: str,
+    query: str,
+    allow_search: bool,
+    system_prompt: str,
+    provider: str,
+) -> Dict[str, Any]:
+    """Run Agentra's LangGraph ReAct agent."""
+
+    if not query or not query.strip():
+        raise ValueError("Query cannot be empty.")
+
+    prompt = system_prompt.strip() or DEFAULT_SYSTEM_PROMPT
+    llm = _build_llm(provider, llm_id)
 
     tools = []
-
     if allow_search:
-
-        tavily_api_key = os.getenv("TAVILY_API_KEY")
-
-        if not tavily_api_key:
-            return "TAVILY_API_KEY is missing from your .env file."
-
-        tools = [
+        tools.append(
             TavilySearch(
                 max_results=3,
-                tavily_api_key=tavily_api_key
+                tavily_api_key=_require_env("TAVILY_API_KEY"),
             )
-        ]
-
-
-    # ==============================================
-    # DEFAULT SYSTEM PROMPT
-    # ==============================================
-
-    if not system_prompt.strip():
-
-        system_prompt = (
-            "You are Agentra, a smart, helpful, friendly, "
-            "and accurate AI assistant. "
-            "Give clear and useful answers."
         )
-
-
-    # ==============================================
-    # CREATE LANGGRAPH AGENT
-    # ==============================================
 
     agent = create_react_agent(
         model=llm,
         tools=tools,
-        prompt=system_prompt
+        prompt=prompt,
     )
 
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": query.strip(),
+                }
+            ]
+        }
+    )
 
-    # ==============================================
-    # USER MESSAGE
-    # ==============================================
+    messages = result.get("messages", [])
+    response = ""
 
-    user_message = query[-1]
+    for message in reversed(messages):
+        if isinstance(message, AIMessage) and message.content:
+            content = message.content
 
-    state = {
-        "messages": [
-            {
-                "role": "user",
-                "content": user_message
-            }
-        ]
+            if isinstance(content, list):
+                content = "\n".join(
+                    item.get("text", str(item))
+                    if isinstance(item, dict)
+                    else str(item)
+                    for item in content
+                )
+
+            response = str(content).strip()
+            if response:
+                break
+
+    if not response:
+        response = "The agent completed the task but did not return a readable response."
+
+    return {
+        "response": response,
+        "sources": _extract_sources(messages) if allow_search else [],
     }
-
-
-    # ==============================================
-    # RUN AGENT
-    # ==============================================
-
-    response = agent.invoke(state)
-
-
-    # ==============================================
-    # GET MESSAGES
-    # ==============================================
-
-    messages = response.get(
-        "messages",
-        []
-    )
-
-
-    # ==============================================
-    # EXTRACT FINAL AI RESPONSE
-    # ==============================================
-
-    ai_messages = [
-        message.content
-        for message in messages
-        if isinstance(message, AIMessage)
-    ]
-
-
-    if ai_messages:
-
-        return ai_messages[-1]
-
-
-    return "The AI agent did not return a response."
-
